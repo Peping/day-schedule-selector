@@ -1,0 +1,24 @@
+{
+  "name": "day-schedule-selector",
+  "description": "Simple Week Scheduler",
+  "main": "src/index.js",
+  "authors": [
+    "Artsy <engineering@artsy.net>"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "schedule",
+    "calendar"
+  ],
+  "homepage": "https://github.com/artsy/day-schedule-selector",
+  "moduleType": [
+    "globals"
+  ],
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ]
+}

@@ -3,7 +3,8 @@
   "description": "Simple Week Scheduler",
   "main": "src/index.js",
   "authors": [
-    "Artsy <engineering@artsy.net>"
+    "Artsy <engineering@artsy.net>",
+    "Peping <hornych@mathesio.cz>"
   ],
   "license": "MIT",
   "keywords": [

@@ -10,17 +10,22 @@
   }
 
   DayScheduleSelector.DEFAULTS = {
-    days        : [0, 1, 2, 3, 4, 5, 6],  // Sun - Sat
-    startTime   : '08:00',                // HH:mm format
-    endTime     : '20:00',                // HH:mm format
-    interval    : 30,                     // minutes
-    stringDays  : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-    template    : '<div class="day-schedule-selector">'         +
-                    '<table class="schedule-table">'            +
-                      '<thead class="schedule-header"></thead>' +
-                      '<tbody class="schedule-rows"></tbody>'   +
-                    '</table>'                                  +
-                  '<div>'
+    days          : [0, 1, 2, 3, 4, 5, 6],  // Sun - Sat
+    startTime     : '08:00',                // HH:mm format
+    endTime       : '20:00',                // HH:mm format
+    interval      : 30,                     // minutes
+    stringDays    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    timeFormat    : '12',
+    selectingClass: 'schedule-selecting',
+    selectedClass : 'schedule-selected',
+    disabledClass : 'schedule-disabled',
+    selectRanges  : true,
+    template      : '<div class="day-schedule-selector">'         +
+                      '<table class="schedule-table">'            +
+                        '<thead class="schedule-header"></thead>' +
+                        '<tbody class="schedule-rows"></tbody>'   +
+                      '</table>'                                  +
+                    '<div>'
   };
 
   /**
@@ -55,6 +60,7 @@
       , end = this.options.endTime
       , interval = this.options.interval
       , days = this.options.days
+      , timeFormat = this.options.timeFormat
       , $el = this.$el.find('.schedule-rows');
 
     $.each(generateDates(start, end, interval), function (i, d) {
@@ -62,7 +68,8 @@
         return '<td class="time-slot" data-time="' + hhmm(d) + '" data-day="' + days[i] + '"></td>'
       }).join();
 
-      $el.append('<tr><td class="time-label">' + hmmAmPm(d) + '</td>' + daysInARow + '</tr>');
+      var formattedTime = timeFormat == '12' ? hmmAmPm(d) : hhmm(d);
+      $el.append('<tr><td class="time-label">' + formattedTime + '</td>' + daysInARow + '</tr>');
     });
   };
 
@@ -72,10 +79,77 @@
    */
   DayScheduleSelector.prototype.isSelecting = function () {
     return !!this.$selectingStart;
-  }
+  };
 
-  DayScheduleSelector.prototype.select = function ($slot) { $slot.attr('data-selected', 'selected'); }
-  DayScheduleSelector.prototype.deselect = function ($slot) { $slot.removeAttr('data-selected'); }
+  /**
+   *
+   * @param day string|number day's name or index
+   * @param start string starting time
+   * @param end string end time
+   * @param attribute string
+   * @param value -1: toggle, 0: deselect, 1:select
+   * @public
+   */
+  DayScheduleSelector.prototype.fill = function (day, start, end, attribute, value) {
+    if (typeof day !== 'number') {
+      day = this.options.stringDays.indexOf(day);
+    }
+    var startSecs = hhmmToSecondsSinceMidnight(start);
+    var endSecs = hhmmToSecondsSinceMidnight(end);
+
+    var $slots = this.$el.find('.time-slot[data-day="'+day+'"]').filter(function () {
+      var seconds = hhmmToSecondsSinceMidnight(this.dataset.time);
+      return (startSecs <= seconds && seconds <= endSecs)
+          || (endSecs <= seconds && seconds <= startSecs);
+    });
+
+    switch (value) {
+      case -1:
+        $slots.toggleClass(this.options[attribute + 'Class']).each(function () {
+          if (this.dataset[attribute] == attribute) {
+            delete this.dataset[attribute];
+          } else {
+            this.dataset[attribute] = attribute;
+          }
+        });
+        break;
+      case 0:
+      case false:
+        $slots.removeClass(this.options[attribute + 'Class'])
+            .removeAttr('data-'+attribute);
+        break;
+      case 1:
+      case true:
+        $slots.addClass(this.options[attribute + 'Class'])
+            .attr('data-'+attribute,attribute);
+    }
+  };
+
+  DayScheduleSelector.prototype.select = function (dayOr$slot, start, end) {
+    if (dayOr$slot instanceof jQuery) {
+      dayOr$slot.each(function() {
+        var time = this.dataset.time;
+        this.fill(this.dataset.day|0, time, time, 'selected', true);
+      })
+    } else {
+      this.fill(dayOr$slot, start, end, 'selected', true);
+    }
+
+    this.$el.trigger('changed.dayScheduleSelector', this.serialize());
+  };
+
+  DayScheduleSelector.prototype.deselect = function (dayOr$slot, start, end) {
+    if (dayOr$slot instanceof jQuery) {
+      dayOr$slot.each(function() {
+        var time = this.dataset.time;
+        this.fill(this.dataset.day|0, time, time, 'selected', false);
+      })
+    } else {
+      this.fill(dayOr$slot, start, end, 'selected', false);
+    }
+
+    this.$el.trigger('changed.dayScheduleSelector', this.serialize());
+  };
 
   function isSlotSelected($slot) { return $slot.is('[data-selected]'); }
   function isSlotSelecting($slot) { return $slot.is('[data-selecting]'); }
@@ -101,40 +175,59 @@
       , $slots;
 
     this.$el.on('click', '.time-slot', function () {
-      var day = $(this).data('day');
-      if (!plugin.isSelecting()) {  // if we are not in selecting mode
-        if (isSlotSelected($(this))) { plugin.deselect($(this)); }
-        else {  // then start selecting
-          plugin.$selectingStart = $(this);
-          $(this).attr('data-selecting', 'selecting');
-          plugin.$el.find('.time-slot').attr('data-disabled', 'disabled');
-          plugin.$el.find('.time-slot[data-day="' + day + '"]').removeAttr('data-disabled');
+      var day = this.dataset.day|0;
+      if (options.selectRanges) {
+        if (!plugin.isSelecting()) {  // if we are not in selecting mode
+          if (isSlotSelected($(this))) {
+            plugin.deselect($(this));
+          }
+          else {  // then start selecting
+            plugin.$selectingStart = $(this);
+            $(this).attr('data-selecting', 'selecting');
+            plugin.$el.find('.time-slot').attr('data-disabled', 'disabled').addClass(options.disabledClass);
+            plugin.$el.find('.time-slot[data-day="' + day + '"]').removeAttr('data-disabled').removeClass(options.disabledClass);
+          }
+        } else {  // if we are in selecting mode
+          if (day == plugin.$selectingStart.data('day')) {  // if clicking on the same day column
+            // then end of selection
+            var $selected = plugin.$el.find('.time-slot[data-day="' + day + '"]').filter('[data-selecting]');
+            $selected.removeAttr('data-selecting').removeClass(options.selectingClass);
+            plugin.select($selected);
+            plugin.$el.find('.time-slot').removeAttr('data-disabled').removeClass(options.disabledClass);
+            plugin.$el.trigger('selected.artsy.dayScheduleSelector', [getSelection(plugin, plugin.$selectingStart, $(this))]);
+            plugin.$selectingStart = null;
+          }
         }
-      } else {  // if we are in selecting mode
-        if (day == plugin.$selectingStart.data('day')) {  // if clicking on the same day column
-          // then end of selection
-          plugin.$el.find('.time-slot[data-day="' + day + '"]').filter('[data-selecting]')
-            .attr('data-selected', 'selected').removeAttr('data-selecting');
-          plugin.$el.find('.time-slot').removeAttr('data-disabled');
-          plugin.$el.trigger('selected.artsy.dayScheduleSelector', [getSelection(plugin, plugin.$selectingStart, $(this))]);
-          plugin.$selectingStart = null;
+      } else { //Range mode disabled, toggle clicked
+        var time = this.dataset.time;
+        if (isSlotSelected($(this)))
+        {
+          plugin.deselect(day,time,time);
+        } else {
+          plugin.select(day,time,time);
         }
       }
     });
 
-    this.$el.on('mouseover', '.time-slot', function () {
-      var $slots, day, start, end, temp;
-      if (plugin.isSelecting()) {  // if we are in selecting mode
-        day = plugin.$selectingStart.data('day');
-        $slots = plugin.$el.find('.time-slot[data-day="' + day + '"]');
-        $slots.filter('[data-selecting]').removeAttr('data-selecting');
-        start = $slots.index(plugin.$selectingStart);
-        end = $slots.index(this);
-        if (end < 0) return;  // not hovering on the same column
-        if (start > end) { temp = start; start = end; end = temp; }
-        $slots.slice(start, end + 1).attr('data-selecting', 'selecting');
-      }
-    });
+    if (options.selectRanges) {
+      this.$el.on('mouseover', '.time-slot', function () {
+        var $slots, day, start, end, temp;
+        if (plugin.isSelecting()) {  // if we are in selecting mode
+          day = plugin.$selectingStart.data('day');
+          $slots = plugin.$el.find('.time-slot[data-day="' + day + '"]');
+          $slots.filter('[data-selecting]').removeAttr('data-selecting').removeClass(options.selectingClass);
+          start = $slots.index(plugin.$selectingStart);
+          end = $slots.index(this);
+          if (end < 0) return;  // not hovering on the same column
+          if (start > end) {
+            temp = start;
+            start = end;
+            end = temp;
+          }
+          $slots.slice(start, end + 1).attr('data-selecting', 'selecting').addClass(options.selectingClass);
+        }
+      });
+    }
   };
 
   /**
